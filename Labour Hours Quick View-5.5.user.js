@@ -10,6 +10,8 @@
 // @match        https://fclm-portal.amazon.com/*warehouseId=SBS2*
 // @grant        GM_xmlhttpRequest
 // @connect      fclm-portal.amazon.com
+// @updateURL    https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.5.user.js
+// @downloadURL  https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.5.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
