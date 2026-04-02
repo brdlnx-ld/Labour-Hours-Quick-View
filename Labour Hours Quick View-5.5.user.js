@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Labour Hours Quick View
 // @namespace    http://tampermonkey.net/
-// @version      5.6
-// @description  Multi-site labour hours dashboard with full-screen layout, CSV export, site-specific shift windows, EOS-style breakout groups, day/week view, filtered JOB_ROLE tracking, LCY8 dual-shift week view, and improved UI
+// @version      5.8
+// @description  Multi-site labour hours dashboard with full-screen layout, CSV export, site-specific shift windows, EOS-style breakout groups, day/week view, filtered JOB_ROLE tracking, LCY8 dual-shift week view, improved UI, and configurable auto-refresh interval, countdown timer, and pause/resume
 // @author       brdlnx
 // @match        https://fclm-portal.amazon.com/*warehouseId=LCY8*
 // @match        https://fclm-portal.amazon.com/*warehouseId=STN8*
@@ -10,8 +10,8 @@
 // @match        https://fclm-portal.amazon.com/*warehouseId=SBS2*
 // @grant        GM_xmlhttpRequest
 // @connect      fclm-portal.amazon.com
-// @updateURL    https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.6.user.js
-// @downloadURL  https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.6.user.js
+// @updateURL    https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.8.user.js
+// @downloadURL  https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-5.8.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,7 +21,7 @@
     const AVAILABLE_SITES = ['LCY8', 'STN8', 'SXW2', 'SBS2'];
     const DEFAULT_SITE = 'LCY8';
     const NODE_TYPE = 'SC';
-    const REFRESH_INTERVAL = 5 * 60000;
+    let refreshInterval = 10 * 60000; // default 10 minutes
     const BATCH_SIZE = 12;
     const BATCH_DELAY = 0;
     const WEEK_1_START = new Date('2025-12-28T00:00:00');
@@ -105,6 +105,9 @@
     let selectedViewMode = 'DAY';
     let lastAutoShift = null;
     let refreshTimerId = null;
+    let countdownTimerId = null;
+    let refreshPaused = false;
+    let nextRefreshAt = null;
     let isDashboardOpen = false;
 
     const dataCache = {};
@@ -213,7 +216,49 @@
     function isHistorical() { return selectedDate && selectedDate !== todayStr(); }
     function resetRefreshTimer() {
         if (refreshTimerId) clearInterval(refreshTimerId);
-        refreshTimerId = setInterval(autoRefresh, REFRESH_INTERVAL);
+        if (countdownTimerId) clearInterval(countdownTimerId);
+        if (refreshPaused) return;
+        nextRefreshAt = Date.now() + refreshInterval;
+        refreshTimerId = setInterval(autoRefresh, refreshInterval);
+        startCountdown();
+    }
+
+    function startCountdown() {
+        if (countdownTimerId) clearInterval(countdownTimerId);
+        countdownTimerId = setInterval(function () {
+            if (refreshPaused || !nextRefreshAt) return;
+            const remaining = Math.max(0, nextRefreshAt - Date.now());
+            const mins = Math.floor(remaining / 60000);
+            const secs = Math.floor((remaining % 60000) / 1000);
+            const el = document.getElementById('lhqv-countdown');
+            if (el) {
+                el.textContent = '\u23f1 ' + mins + ':' + String(secs).padStart(2, '0');
+                el.style.color = remaining < 60000 ? '#fbbf24' : '#64748b';
+            }
+        }, 1000);
+    }
+
+    function stopCountdown() {
+        if (countdownTimerId) clearInterval(countdownTimerId);
+        countdownTimerId = null;
+        const el = document.getElementById('lhqv-countdown');
+        if (el) { el.textContent = '\u23f8 Paused'; el.style.color = '#f59e0b'; }
+    }
+
+    function togglePause() {
+        refreshPaused = !refreshPaused;
+        const btn = document.getElementById('lhqv-pause-btn');
+        if (refreshPaused) {
+            if (refreshTimerId) clearInterval(refreshTimerId);
+            refreshTimerId = null;
+            stopCountdown();
+            if (btn) { btn.textContent = '\u25b6 Resume'; btn.classList.remove('lhqv-btn-warning'); btn.classList.add('lhqv-btn-success'); }
+            updateStatus('Auto-refresh paused', 'error');
+        } else {
+            if (btn) { btn.textContent = '\u23f8 Pause'; btn.classList.remove('lhqv-btn-success'); btn.classList.add('lhqv-btn-warning'); }
+            resetRefreshTimer();
+            updateStatus('Auto-refresh resumed', 'ok');
+        }
     }
 
     function buildPPAUrl(processConfig, forcedDateStr, forcedShiftKey) {
@@ -759,6 +804,7 @@
     }
 
     function autoRefresh() {
+        nextRefreshAt = Date.now() + refreshInterval;
         const currentShift = inferShift();
         if (siteUsesShiftSelector() && !selectedShift && lastAutoShift && lastAutoShift !== currentShift) {
             selectedDate = null;
@@ -888,6 +934,8 @@
 .lhqv-btn-primary { background: linear-gradient(135deg,#38bdf8,#2563eb); color: #fff; }
 .lhqv-btn-secondary { background: rgba(51,65,85,0.9); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.18); }
 .lhqv-btn-danger { background: rgba(127,29,29,0.6); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+.lhqv-btn-warning { background: rgba(120,53,15,0.6); color: #fcd34d; border: 1px solid rgba(245,158,11,0.3); }
+.lhqv-btn-success { background: rgba(20,83,45,0.6); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
 
 #lhqv-status-bar {
     margin-top: 10px; padding: 6px 10px;
@@ -1031,14 +1079,23 @@
                     <option value="WEEK">Week View</option>
                 </select>
                 <select id="lhqv-shift-select"></select>
+                <select id="lhqv-interval-select" title="Auto-refresh interval">
+                    <option value="600000">Refresh: 10 min</option>
+                    <option value="1800000">Refresh: 30 min</option>
+                    <option value="3600000">Refresh: 60 min</option>
+                </select>
             </div>
             <div id="lhqv-controls-right">
                 <button class="lhqv-btn lhqv-btn-primary" id="lhqv-refresh-btn">&#8635; Refresh</button>
+                <button class="lhqv-btn lhqv-btn-warning" id="lhqv-pause-btn">&#9208; Pause</button>
                 <button class="lhqv-btn lhqv-btn-secondary" id="lhqv-export-btn">&#8595; Export CSV</button>
                 <button class="lhqv-btn lhqv-btn-danger" id="lhqv-close-btn">&#10005; Close</button>
             </div>
         </div>
-        <div id="lhqv-status-bar" id="lhqv-status">Starting...</div>
+        <div id="lhqv-status-bar-wrap" style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+            <div id="lhqv-status-bar" id="lhqv-status" style="flex:1;">Starting...</div>
+            <span id="lhqv-countdown" style="font-size:11px;font-weight:700;color:#64748b;white-space:nowrap;padding:6px 10px;background:rgba(2,6,23,0.6);border-radius:8px;border:1px solid rgba(148,163,184,0.08);">&#9203; --:--</span>
+        </div>
     </div>
 
     <div id="lhqv-cards">
@@ -1124,8 +1181,24 @@
             selectedShift = this.value || null; updateHeaderBadges(); refreshData();
         });
 
+        // Interval select
+        const intervalSelect = document.getElementById('lhqv-interval-select');
+        intervalSelect.value = String(refreshInterval);
+        intervalSelect.addEventListener('change', function () {
+            refreshInterval = parseInt(this.value, 10);
+            resetRefreshTimer();
+            const mins = refreshInterval / 60000;
+            updateStatus('Auto-refresh set to ' + mins + ' min', 'ok');
+        });
+
         // Buttons
-        document.getElementById('lhqv-refresh-btn').addEventListener('click', function () { refreshData(); });
+        document.getElementById('lhqv-refresh-btn').addEventListener('click', function () {
+            if (refreshPaused) { refreshPaused = false; }
+            refreshData();
+            const btn = document.getElementById('lhqv-pause-btn');
+            if (btn) { btn.textContent = '\u23f8 Pause'; btn.classList.remove('lhqv-btn-success'); btn.classList.add('lhqv-btn-warning'); }
+        });
+        document.getElementById('lhqv-pause-btn').addEventListener('click', function () { togglePause(); });
         document.getElementById('lhqv-export-btn').addEventListener('click', function () { exportCSV(); });
 
         // Search + clear button
