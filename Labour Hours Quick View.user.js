@@ -14,8 +14,8 @@
 // @match        https://fclm-portal.amazon.com/*warehouseId=BHX8*
 // @grant        GM_xmlhttpRequest
 // @connect      fclm-portal.amazon.com
-// @updateURL    https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-6.0.user.js
-// @downloadURL  https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View-6.0.user.js
+// @updateURL    https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View.user.js
+// @downloadURL  https://github.com/brdlnx-ld/Labour-Hours-Quick-View/raw/refs/heads/main/Labour%20Hours%20Quick%20View.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
